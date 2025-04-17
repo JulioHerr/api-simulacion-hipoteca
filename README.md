@@ -20,7 +20,7 @@ cd api-clientes-flask
 
 pip install -r requirements.txt
 
-**## ▶️ Ejecución**
+## ▶️ Ejecución
 
 python app.py
 
@@ -28,7 +28,7 @@ La API estará disponible en http://localhost:5000
 La documentación Swagger en:
 📄 http://localhost:5000/apidocs
 
-**##🧪 Endpoints disponibles**
+##🧪 Endpoints disponibles
 POST /clientes – Crear cliente
 
 GET /clientes/<dni> – Consultar cliente
