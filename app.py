@@ -1,23 +1,20 @@
 #-----------------------------------
 # @author JULIO HERRERA RUIZ
 # Prueba de desarrollo previa a entrevista con Roams Palencia
-# TODO Valores negativos o no numéricos en capital, plazo, tasa
-# TODO Campos vacíos o faltantes
-# TODO No hay verificación previa de si el cliente con ese dni ya existe antes de crearlo
-# TODO Si alguien manda un JSON mal formado, el servidor puede lanzar una excepción.
-#       ✔️ Solución: Agregar un try/except o manejar errores con @app.errorhandler
-# TODO Agregar ejemplos (example:) en todos los campos ayuda mucho al usar Swagger UI.
-# TODO Prevenir division by zero En la fórmula de simulación de hipoteca no se controla si tasa == 0.
 #----------------------------------
 
 from flask import Flask, request, jsonify # Importa Flask y herramientas para manejar peticiones y respuestas JSON
 from flask_sqlalchemy import SQLAlchemy  # Importa SQLAlchemy para manejar la base de datos
 from flasgger import Swagger # Importa Swagger para documentar automáticamente la API con una interfaz interactiva
+from marshmallow import Schema, fields, ValidationError #Importa clases para definir esquemas de validación de datos y para capturar errores de validación
+from werkzeug.exceptions import BadRequest # Importa la excepción BadRequest para manejar errores cuando se envía un JSON mal formado o inválido
 import re # Importa expresiones regulares para validar el formato del DNI
 
 app = Flask(__name__) # Inicializa la aplicación Flask
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///clientes.db' # Configura la URI de la base de datos SQLite
 db = SQLAlchemy(app) # Inicializa SQLAlchemy con la app de Flask
+
+Swagger(app)
 
 # Modelo de datos para representar a un cliente
 class Cliente(db.Model):
@@ -27,6 +24,34 @@ class Cliente(db.Model):
     email = db.Column(db.String(100), nullable=False)
     capital = db.Column(db.Float, nullable=False)
 
+# Esquema de validación para los datos enviados en la simulación de hipoteca
+class SimulacionSchema(Schema):
+    capital = fields.Float(required=True, validate=lambda x: x > 0)
+    tasa = fields.Float(required=True, validate=lambda x: x >= 0)
+    plazo = fields.Int(required=True, validate=lambda x: x > 0)
+
+# Esquema de validación para los datos de un cliente (al crear o modificar)
+class ClienteSchema(Schema):
+    nombre = fields.Str(required=True, validate=lambda x: len(x) > 0)
+    dni = fields.Str(required=True, validate=lambda x: len(x) > 0)
+    email = fields.Str(required=True, validate=lambda x: len(x) > 0)
+    capital = fields.Float(required=True, validate=lambda x: x > 0)
+
+# Maneja errores cuando el cliente envía un JSON mal formado (sintaxis incorrecta)
+@app.errorhandler(BadRequest)
+def handle_bad_request(e):
+    return jsonify({"error": "JSON mal formado", "message": str(e)}), 400
+
+# Maneja errores de validación de datos usando marshmallow (campos faltantes o incorrectos)
+@app.errorhandler(ValidationError)
+def handle_validation_error(e):
+    return jsonify({"error": "Datos inválidos", "mensajes": e.messages}), 400
+
+# Maneja errores internos inesperados del servidor (status 500)
+@app.errorhandler(500)
+def handle_internal_error(e):
+    return jsonify({"error": "Error interno del servidor"}), 500
+
 # Validación del DNI
 def validar_dni(dni):
     patron = r'^\d{8}[A-HJ-NP-TV-Z]$'# Regex para validar el formato del DNI español
@@ -34,6 +59,10 @@ def validar_dni(dni):
         return True
     return False
 
+#Ejemplo en Powershell:
+#   curl.exe -X POST http://127.0.0.1:5000/clientes `                                                                                                   
+#>>   -H "Content-Type: application/json" `
+#>>   -d '{\"nombre\": \"Juan\", \"dni\": \"12345678Z\", \"email\": \"juan@example.com\", \"capital\": 200000.0}'
 @app.route('/clientes', methods=['POST']) # Endpoint para crear un nuevo cliente
 def crear_cliente():
     """
@@ -55,12 +84,16 @@ def crear_cliente():
           properties:
             nombre:
               type: string
+              example: "María Pérez"
             dni:
               type: string
+              example: "12345678Z"
             email:
               type: string
+              example: "maria.perez@example.com"
             capital:
               type: number
+              example: 150000.0
     responses:
       201:
         description: Cliente creado exitosamente
@@ -68,8 +101,16 @@ def crear_cliente():
         description: DNI inválido
     """
     data = request.get_json() # Obtiene los datos en formato JSON del cuerpo de la solicitud
+    
+    cliente_data = ClienteSchema().load(data) # Si algo falla, se capturará el ValidationError automáticamente y lo manejará con el handler global
+    
     if not validar_dni(data['dni']):
         return jsonify({'error': 'DNI inválido'}), 400 # Devuelve error si el DNI no es válido
+    
+    # Verificar si el cliente con el mismo DNI ya existe
+    cliente_existente = Cliente.query.filter_by(dni=cliente_data['dni']).first()
+    if cliente_existente:
+        return jsonify({'error': 'El cliente con ese DNI ya existe'}), 409  # Código de estado 409 para conflicto
 
     # Crea un nuevo cliente con los datos recibidos
     nuevo_cliente = Cliente(
@@ -83,6 +124,8 @@ def crear_cliente():
     db.session.commit()
     return jsonify({'message': 'Cliente creado exitosamente'}), 201
 
+#Ejemplo en Powershell:
+#   curl.exe http://127.0.0.1:5000/clientes/12345678Z
 @app.route('/clientes/<dni>', methods=['GET']) # Endpoint para consultar los datos de un cliente por su DNI
 def consultar_cliente(dni):
     """
@@ -95,6 +138,7 @@ def consultar_cliente(dni):
         in: path
         required: true
         type: string
+        example: "12345678Z"
     responses:
       200:
         description: Datos del cliente
@@ -103,12 +147,16 @@ def consultar_cliente(dni):
           properties:
             nombre:
               type: string
+              example: "María Pérez"
             dni:
               type: string
+              example: "12345678Z"
             email:
               type: string
+              example: "maria.perez@example.com"
             capital:
               type: number
+              example: 150000.0
       404:
         description: Cliente no encontrado
     """
@@ -123,6 +171,10 @@ def consultar_cliente(dni):
         'capital': cliente.capital
     })
 
+#Ejemplo en Powershell:
+#   curl.exe -X POST http://127.0.0.1:5000/simulacion `
+#>> -H "Content-Type: application/json" `
+#>> -d '{\"capital\": 100000, \"tasa\": 3.5, \"plazo\": 30}'
 @app.route('/simulacion', methods=['POST'])# Endpoint para simular una hipoteca mensual
 def simulacion_hipoteca():
     """
@@ -160,16 +212,25 @@ def simulacion_hipoteca():
               type: number
               example: 449.04
     """
-    data = request.get_json()
+    data = SimulacionSchema().load(request.get_json()) # Si algo falla, se capturará el ValidationError automáticamente y lo manejará con el handler global
+    
     capital = data['capital'] # Capital solicitado
-    tase = data['tase'] / 100 / 12  # TAE (interés anual) convertido a interés mensual
+    tasa = data['tasa'] / 100 / 12  # TAE (interés anual) convertido a interés mensual
     plazo = data['plazo'] * 12  # Plazo en años convertido a meses
 
-    # Fórmula para calcular la cuota mensual de un préstamo (sistema francés)
-    cuota = capital * tase / (1 - (1 + tase) ** (-plazo))
+    # Prevenir división por cero si la tasa es 0
+    if tasa == 0:
+        cuota = capital / plazo  # Si no hay interés, simplemente se divide el capital entre el plazo
+    else:
+        # Fórmula para calcular la cuota mensual con interés (sistema francés)
+        cuota = capital * tasa / (1 - (1 + tasa) ** (-plazo))
 
     return jsonify({'cuota_mensual': cuota}) # Devuelve la cuota mensual
 
+#Ejemplo en Powershell:
+#   curl.exe -X PUT http://127.0.0.1:5000/clientes/12345678Z 
+# -H "Content-Type: application/json" 
+# -d '{\"nombre\": \"Juan Pérez\", \"email\": \"juan.perez@example.com\", \"capital\": 250000.0}'
 @app.route('/clientes/<dni>', methods=['PUT']) # Endpoint para modificar los datos de un cliente
 def modificar_cliente(dni):
     """
@@ -182,6 +243,7 @@ def modificar_cliente(dni):
         in: path
         required: true
         type: string
+        example: "12345678Z"
       - in: body
         name: body
         schema:
@@ -189,10 +251,13 @@ def modificar_cliente(dni):
           properties:
             nombre:
               type: string
+              example: "María Pérez Actualizada"
             email:
               type: string
+              example: "nuevocorreo@example.com"
             capital:
               type: number
+              example: 200000.0
     responses:
       200:
         description: Cliente actualizado exitosamente
@@ -212,6 +277,8 @@ def modificar_cliente(dni):
     db.session.commit()# Guarda los cambios
     return jsonify({'message': 'Cliente actualizado exitosamente'})
 
+#Ejemplo en Powershell:
+#   curl.exe -X DELETE http://127.0.0.1:5000/clientes/12345678Z
 @app.route('/clientes/<dni>', methods=['DELETE']) # Endpoint para eliminar un cliente
 def eliminar_cliente(dni):
     """
@@ -224,6 +291,7 @@ def eliminar_cliente(dni):
         in: path
         required: true
         type: string
+        example: "12345678Z"
     responses:
       200:
         description: Cliente eliminado exitosamente
@@ -240,5 +308,6 @@ def eliminar_cliente(dni):
 
 # Punto de entrada principal de la aplicación
 if __name__ == '__main__':
-    db.create_all()  # Crear las tablas si no existen
+    with app.app_context():  # Asegura que Flask sepa cuál es la app activa
+        db.create_all()      # Crea las tablas si no existen
     app.run(debug=True)
