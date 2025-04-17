@@ -15,26 +15,30 @@ API RESTful en Flask para gestionar clientes y simular hipotecas, con documentac
 ```bash
 git clone https://github.com/tu-usuario/api-clientes-flask.git
 cd api-clientes-flask
+```
 
-2. Instala las dependencias
+2. Instala las dependencias:
 
+```bash
 pip install -r requirements.txt
+```
 
 ## ▶️ Ejecución
 
+```bash
 python app.py
+```
 
-La API estará disponible en http://localhost:5000
-La documentación Swagger en:
-📄 http://localhost:5000/apidocs
+La API estará disponible en:  
+`http://localhost:5000`
 
-##🧪 Endpoints disponibles
-POST /clientes – Crear cliente
+La documentación Swagger en:  
+📄 `http://localhost:5000/apidocs`
 
-GET /clientes/<dni> – Consultar cliente
+## 🧪 Endpoints disponibles
 
-PUT /clientes/<dni> – Modificar cliente
-
-DELETE /clientes/<dni> – Eliminar cliente
-
-POST /simulacion – Simular hipoteca
+- `POST /clientes` – Crear cliente  
+- `GET /clientes/<dni>` – Consultar cliente  
+- `PUT /clientes/<dni>` – Modificar cliente  
+- `DELETE /clientes/<dni>` – Eliminar cliente  
+- `POST /simulacion` – Simular hipoteca
